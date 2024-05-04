@@ -1,11 +1,13 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 
 
 import { PrismaClient } from '@prisma/client';
 import { CreateOrderDto } from './dto';
+import { RpcException } from '@nestjs/microservices';
+import { OrderPaginationDto } from './dto/order-pagination.dto';
 
 @Injectable()
-export class OrdersService extends PrismaClient implements OnModuleInit{
+export class OrdersService extends PrismaClient implements OnModuleInit {
 
   private readonly logger = new Logger('OrderService')
 
@@ -14,19 +16,47 @@ export class OrdersService extends PrismaClient implements OnModuleInit{
     this.logger.log('OrderService connected to database');
   }
 
-  create(createOrderDto: CreateOrderDto) {
-    return createOrderDto;
+  async create(createOrderDto: CreateOrderDto) {
+    const order = await this.order.create({ data: createOrderDto });
+    return order;
   }
 
-  findAll() {
-    return `This action returns all orders`;
+  async findAll(orderPaginationDto: OrderPaginationDto) {
+    const { limit, page, status } = orderPaginationDto;
+
+    const [totalOrders, products] = await Promise.all([
+      this.order.count({ where: { status } }),
+      this.order.findMany({
+        where: { status },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(totalOrders / limit);
+
+    return {
+      totalOrders,
+      page,
+      totalPages,
+      next: (totalOrders - (page * limit)) > 0 ? `/orders?page=${page + 1}&limit=${limit}` : null,
+      prev: (page - 1 > 0) ? `/orders?page=${page - 1}&limit=${limit}` : null,
+      products
+    }
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} order`;
+  async findOne(id: string) {
+    const order = await this.order.findFirst({
+      where: { id }
+    });
+    if (!order) throw new RpcException({
+      message: `Order not found with id #${id}`,
+      statusCode: HttpStatus.NOT_FOUND
+    });
+    return order;
   }
 
-  changeStatus(){
+  changeStatus() {
     return `This action changes the status of an order`;
   }
 }
