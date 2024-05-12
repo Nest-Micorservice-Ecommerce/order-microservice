@@ -30,7 +30,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
       const productsIds = createOrderDto.items.map(item => item.productId)
 
-      const products: any [] = await firstValueFrom(
+      const products: any[] = await firstValueFrom(
         this.productsClient.send({ cmd: 'validateProducts' }, productsIds)
       )
 
@@ -49,7 +49,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
           totalItems,
           OrderItem: {
             createMany: {
-              data: createOrderDto.items.map( (orderItem) => ({
+              data: createOrderDto.items.map((orderItem) => ({
                 productsId: orderItem.productId,
                 quantity: orderItem.quantity,
                 price: products.find(product => product.id === orderItem.productId).price,
@@ -86,10 +86,9 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   async findAll(orderPaginationDto: OrderPaginationDto) {
     const { limit, page, status } = orderPaginationDto;
 
-    const [totalOrders, products] = await Promise.all([
-      this.order.count({ where: { status } }),
+    const [totalOrders, orders] = await Promise.all([
+      this.order.count(),
       this.order.findMany({
-        where: { status },
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -103,19 +102,47 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       totalPages,
       next: (totalOrders - (page * limit)) > 0 ? `/orders?page=${page + 1}&limit=${limit}` : null,
       prev: (page - 1 > 0) ? `/orders?page=${page - 1}&limit=${limit}` : null,
-      products
+      orders
     }
   }
 
   async findOne(id: string) {
+
+
+
     const order = await this.order.findFirst({
-      where: { id }
+      where: { id },
+      include: {
+        OrderItem: {
+          select: {
+            price: true,
+            quantity: true,
+            productsId: true,
+          }
+        }
+      }
     });
+
     if (!order) throw new RpcException({
       message: `Order not found with id #${id}`,
       statusCode: HttpStatus.NOT_FOUND
     });
-    return order;
+
+    const productsIds = order.OrderItem.map(item => (
+      item.productsId
+    ))
+
+    const products: any[] = await firstValueFrom(
+      this.productsClient.send({ cmd: 'validateProducts' }, productsIds)
+    )
+
+    return {
+      ...order,
+      OrderItem: order.OrderItem.map(item => ({
+        ...item,
+        name: products.find(product => product.id === item.productsId).name
+      }))
+    };
   }
 
   async changeStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
