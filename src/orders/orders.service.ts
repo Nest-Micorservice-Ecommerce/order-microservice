@@ -86,9 +86,12 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   async findAll(orderPaginationDto: OrderPaginationDto) {
     const { limit, page, status } = orderPaginationDto;
 
+
+
     const [totalOrders, orders] = await Promise.all([
-      this.order.count(),
+      this.order.count({where:{status}}),
       this.order.findMany({
+        where:{status},
         skip: (page - 1) * limit,
         take: limit,
       }),
